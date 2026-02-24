@@ -31,6 +31,12 @@ export {
 } from "./auth-store.js";
 
 let credsSaveQueue: Promise<void> = Promise.resolve();
+
+/** Drain pending credential writes so creds.json is fully written to disk. */
+export function flushCredsSave(): Promise<void> {
+  return credsSaveQueue;
+}
+
 function enqueueSaveCreds(
   authDir: string,
   saveCreds: () => Promise<void> | void,

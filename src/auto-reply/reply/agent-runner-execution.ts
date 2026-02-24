@@ -88,10 +88,14 @@ export async function runAgentTurnWithFallback(params: {
   const runId = params.opts?.runId ?? crypto.randomUUID();
   params.opts?.onAgentRunStart?.(runId);
   if (params.sessionKey) {
+    const provider = params.sessionCtx.Provider?.trim().toLowerCase();
+    const isCronEvent =
+      params.isHeartbeat && (provider === "cron-event" || provider === "exec-event");
     registerAgentRunContext(runId, {
       sessionKey: params.sessionKey,
       verboseLevel: params.resolvedVerboseLevel,
       isHeartbeat: params.isHeartbeat,
+      isCronEvent: isCronEvent || undefined,
     });
   }
   let runResult: Awaited<ReturnType<typeof runEmbeddedPiAgent>>;
@@ -277,6 +281,7 @@ export async function runAgentTurnWithFallback(params: {
             senderName: params.sessionCtx.SenderName?.trim() || undefined,
             senderUsername: params.sessionCtx.SenderUsername?.trim() || undefined,
             senderE164: params.sessionCtx.SenderE164?.trim() || undefined,
+            senderIsOwner: params.followupRun.run.senderIsOwner,
             // Provider threading context for tool auto-injection
             ...buildThreadingToolContext({
               sessionCtx: params.sessionCtx,

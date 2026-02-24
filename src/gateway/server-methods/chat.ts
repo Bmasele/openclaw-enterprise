@@ -208,7 +208,10 @@ function broadcastChatFinal(params: {
     state: "final" as const,
     message: params.message,
   };
-  params.context.broadcast("chat", payload);
+  // Only broadcast to webchat for main sessions (not per-peer DM sessions)
+  if (params.sessionKey.endsWith(":main")) {
+    params.context.broadcast("chat", payload);
+  }
   params.context.nodeSendToSession(params.sessionKey, "chat", payload);
   params.context.agentRunSeq.delete(params.runId);
 }
@@ -227,7 +230,10 @@ function broadcastChatError(params: {
     state: "error" as const,
     errorMessage: params.errorMessage,
   };
-  params.context.broadcast("chat", payload);
+  // Only broadcast to webchat for main sessions (not per-peer DM sessions)
+  if (params.sessionKey.endsWith(":main")) {
+    params.context.broadcast("chat", payload);
+  }
   params.context.nodeSendToSession(params.sessionKey, "chat", payload);
   params.context.agentRunSeq.delete(params.runId);
 }
@@ -731,7 +737,7 @@ export const chatHandlers: GatewayRequestHandlers = {
       return;
     }
 
-    // Broadcast to webchat for immediate UI update
+    // Broadcast to webchat for immediate UI update (main session only)
     const chatPayload = {
       runId: `inject-${appended.messageId}`,
       sessionKey: rawSessionKey,
@@ -739,7 +745,9 @@ export const chatHandlers: GatewayRequestHandlers = {
       state: "final" as const,
       message: appended.message,
     };
-    context.broadcast("chat", chatPayload);
+    if (rawSessionKey.endsWith(":main")) {
+      context.broadcast("chat", chatPayload);
+    }
     context.nodeSendToSession(rawSessionKey, "chat", chatPayload);
 
     respond(true, { ok: true, messageId: appended.messageId });

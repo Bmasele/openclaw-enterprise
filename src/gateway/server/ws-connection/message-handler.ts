@@ -430,7 +430,9 @@ export function attachGatewayWsMessageHandler(params: {
           close(1008, truncateCloseReason(authMessage));
         };
         if (!device) {
-          if (scopes.length > 0) {
+          // Preserve scopes for shared-auth (token/password) connections;
+          // only clear scopes for unauthenticated connections without device identity.
+          if (scopes.length > 0 && !sharedAuthOk) {
             scopes = [];
             connectParams.scopes = scopes;
           }

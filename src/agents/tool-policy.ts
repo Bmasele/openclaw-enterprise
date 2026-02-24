@@ -60,7 +60,20 @@ export const TOOL_GROUPS: Record<string, string[]> = {
   ],
 };
 
-const OWNER_ONLY_TOOL_NAMES = new Set<string>(["whatsapp_login"]);
+const OWNER_ONLY_TOOL_NAMES = new Set<string>([
+  "whatsapp_login",
+  // Dangerous tools — blocked for non-owner senders (e.g. WhatsApp customers).
+  // Customers can only use safe, read-only / messaging tools.
+  // Note: gateway, canvas, nodes are fully denied via tools.deny in agent config.
+  "exec",
+  "process",
+  "write",
+  "edit",
+  "apply_patch",
+  "cron",
+  "sessions_spawn",
+  "browser",
+]);
 
 const TOOL_PROFILES: Record<ToolProfileId, ToolProfilePolicy> = {
   minimal: {

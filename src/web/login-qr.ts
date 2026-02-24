@@ -8,6 +8,7 @@ import { resolveWhatsAppAccount } from "./accounts.js";
 import { renderQrPngBase64 } from "./qr-image.js";
 import {
   createWaSocket,
+  flushCredsSave,
   formatError,
   getStatusCode,
   logoutWeb,
@@ -88,6 +89,9 @@ async function restartLoginSocket(login: ActiveLogin, runtime: RuntimeEnv) {
     info("WhatsApp asked for a restart after pairing (code 515); retrying connection once…"),
   );
   closeSocket(login.sock);
+  // Wait for any pending credential writes to flush to disk before recreating
+  // the socket — otherwise the new socket may read stale/incomplete creds.
+  await flushCredsSave();
   try {
     const sock = await createWaSocket(false, login.verbose, {
       authDir: login.authDir,
@@ -284,6 +288,8 @@ export async function waitForWebLogin(
     }
 
     if (login.connected) {
+      // Flush pending credential writes before closing the socket
+      await flushCredsSave();
       const message = "✅ Linked! WhatsApp is ready.";
       runtime.log(success(message));
       await resetActiveLogin(account.accountId);

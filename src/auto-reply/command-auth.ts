@@ -23,6 +23,12 @@ function resolveProviderFromContext(ctx: MsgContext, cfg: OpenClawConfig): Chann
   if (direct) {
     return direct;
   }
+  // If Provider is explicitly set (e.g., "webchat" for internal/dashboard messages),
+  // don't fall through to auto-detection. This prevents internal messages from being
+  // misidentified as WhatsApp/etc. when only one channel is configured.
+  if (ctx.Provider) {
+    return undefined;
+  }
   const candidates = [ctx.From, ctx.To]
     .filter((value): value is string => Boolean(value?.trim()))
     .flatMap((value) => value.split(":").map((part) => part.trim()));

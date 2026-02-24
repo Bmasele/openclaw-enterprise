@@ -1010,7 +1010,8 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
       } catch (err) {
         const code = (err as { code?: string }).code;
         // Windows doesn't reliably support atomic replace via rename when dest exists.
-        if (code === "EPERM" || code === "EEXIST") {
+        // Docker bind mounts on Windows also fail with EBUSY.
+        if (code === "EPERM" || code === "EEXIST" || code === "EBUSY") {
           await deps.fs.promises.copyFile(tmp, configPath);
           await deps.fs.promises.chmod(configPath, 0o600).catch(() => {
             // best-effort

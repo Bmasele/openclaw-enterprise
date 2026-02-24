@@ -5,7 +5,7 @@ import { danger, info, success } from "../globals.js";
 import { logInfo } from "../logger.js";
 import { defaultRuntime, type RuntimeEnv } from "../runtime.js";
 import { resolveWhatsAppAccount } from "./accounts.js";
-import { createWaSocket, formatError, logoutWeb, waitForWaConnection } from "./session.js";
+import { createWaSocket, flushCredsSave, formatError, logoutWeb, waitForWaConnection } from "./session.js";
 
 export async function loginWeb(
   verbose: boolean,
@@ -38,6 +38,8 @@ export async function loginWeb(
       } catch {
         // ignore
       }
+      // Wait for credential writes to flush before recreating the socket
+      await flushCredsSave();
       const retry = await createWaSocket(false, verbose, {
         authDir: account.authDir,
       });

@@ -304,7 +304,7 @@ export async function handleToolExecutionEnd(
       .runAfterToolCall(hookEvent, {
         toolName,
         agentId: undefined,
-        sessionKey: undefined,
+        sessionKey: ctx.params.sessionKey,
       })
       .catch((err) => {
         ctx.log.warn(`after_tool_call hook failed: tool=${toolName} error=${String(err)}`);

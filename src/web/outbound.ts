@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import { loadConfig } from "../config/config.js";
+import type { OpenClawConfig } from "../config/config.js";
 import { resolveMarkdownTableMode } from "../config/markdown-tables.js";
 import { getChildLogger } from "../logging/logger.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
@@ -8,7 +10,25 @@ import { markdownToWhatsApp } from "../markdown/whatsapp.js";
 import { normalizePollInput, type PollInput } from "../polls.js";
 import { toWhatsappJid } from "../utils.js";
 import { type ActiveWebSendOptions, requireActiveWebListener } from "./active-listener.js";
-import { loadWebMedia } from "./media.js";
+import { getDefaultLocalRoots, loadWebMedia } from "./media.js";
+
+/**
+ * Collect resolved workspace directories from agent config so the outbound
+ * media loader accepts files created by agents (reports, invoices, etc.).
+ */
+function getAgentWorkspaceRoots(cfg: OpenClawConfig): string[] {
+  const agents = cfg.agents as Record<string, unknown> | undefined;
+  const list = agents?.list as Array<Record<string, unknown>> | undefined;
+  if (!Array.isArray(list)) return [];
+  const roots: string[] = [];
+  for (const agent of list) {
+    const ws = agent.workspace;
+    if (typeof ws === "string" && ws.trim()) {
+      roots.push(path.resolve(ws));
+    }
+  }
+  return roots;
+}
 
 const outboundLog = createSubsystemLogger("gateway/channels/whatsapp").child("outbound");
 
@@ -47,7 +67,9 @@ export async function sendMessageWhatsApp(
     let mediaType: string | undefined;
     let documentFileName: string | undefined;
     if (options.mediaUrl) {
-      const media = await loadWebMedia(options.mediaUrl);
+      const media = await loadWebMedia(options.mediaUrl, {
+        localRoots: [...getDefaultLocalRoots(), ...getAgentWorkspaceRoots(cfg)],
+      });
       const caption = text || undefined;
       mediaBuffer = media.buffer;
       mediaType = media.contentType;

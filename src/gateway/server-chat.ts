@@ -7,12 +7,27 @@ import { loadSessionEntry } from "./session-utils.js";
 import { formatForLog } from "./ws-log.js";
 
 /**
+ * Check if a session is the main dashboard session (not a per-peer DM session).
+ * Only main sessions should be broadcast to the webchat UI.
+ */
+function isMainSession(sessionKey: string): boolean {
+  return sessionKey.endsWith(":main");
+}
+
+/**
  * Check if webchat broadcasts should be suppressed for heartbeat runs.
  * Returns true if the run is a heartbeat and showOk is false.
+ * Cron/exec event heartbeats are NEVER suppressed — they contain meaningful
+ * content (scheduled reminders, automation results) that must appear in the dashboard.
  */
 function shouldSuppressHeartbeatBroadcast(runId: string): boolean {
   const runContext = getAgentRunContext(runId);
   if (!runContext?.isHeartbeat) {
+    return false;
+  }
+
+  // Cron/exec events always produce meaningful content — never suppress from dashboard.
+  if (runContext.isCronEvent) {
     return false;
   }
 
@@ -250,8 +265,8 @@ export function createAgentEventHandler({
         timestamp: now,
       },
     };
-    // Suppress webchat broadcast for heartbeat runs when showOk is false
-    if (!shouldSuppressHeartbeatBroadcast(clientRunId)) {
+    // Only broadcast to webchat for main session; suppress heartbeat broadcasts
+    if (isMainSession(sessionKey) && !shouldSuppressHeartbeatBroadcast(clientRunId)) {
       broadcast("chat", payload, { dropIfSlow: true });
     }
     nodeSendToSession(sessionKey, "chat", payload);
@@ -283,8 +298,8 @@ export function createAgentEventHandler({
               }
             : undefined,
       };
-      // Suppress webchat broadcast for heartbeat runs when showOk is false
-      if (!shouldSuppressHeartbeatBroadcast(clientRunId)) {
+      // Only broadcast to webchat for main session; suppress heartbeat broadcasts
+      if (isMainSession(sessionKey) && !shouldSuppressHeartbeatBroadcast(clientRunId)) {
         broadcast("chat", payload);
       }
       nodeSendToSession(sessionKey, "chat", payload);
@@ -297,7 +312,9 @@ export function createAgentEventHandler({
       state: "error" as const,
       errorMessage: error ? formatForLog(error) : undefined,
     };
-    broadcast("chat", payload);
+    if (isMainSession(sessionKey)) {
+      broadcast("chat", payload);
+    }
     nodeSendToSession(sessionKey, "chat", payload);
   };
 

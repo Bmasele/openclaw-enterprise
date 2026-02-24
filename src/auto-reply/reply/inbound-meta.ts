@@ -10,7 +10,10 @@ function safeTrim(value: unknown): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
-export function buildInboundMetaSystemPrompt(ctx: TemplateContext): string {
+export function buildInboundMetaSystemPrompt(
+  ctx: TemplateContext,
+  opts?: { senderIsOwner?: boolean },
+): string {
   const chatType = normalizeChatType(ctx.ChatType);
   const isDirect = !chatType || chatType === "direct";
 
@@ -22,6 +25,9 @@ export function buildInboundMetaSystemPrompt(ctx: TemplateContext): string {
     provider: safeTrim(ctx.Provider),
     surface: safeTrim(ctx.Surface),
     chat_type: chatType ?? (isDirect ? "direct" : undefined),
+    sender: {
+      is_owner: opts?.senderIsOwner === true,
+    },
     flags: {
       is_group_chat: !isDirect ? true : undefined,
       was_mentioned: ctx.WasMentioned === true ? true : undefined,
@@ -71,20 +77,18 @@ export function buildInboundUserContextPrefix(ctx: TemplateContext): string {
     );
   }
 
-  const senderInfo = isDirect
-    ? undefined
-    : {
-        label: resolveSenderLabel({
-          name: safeTrim(ctx.SenderName),
-          username: safeTrim(ctx.SenderUsername),
-          tag: safeTrim(ctx.SenderTag),
-          e164: safeTrim(ctx.SenderE164),
-        }),
-        name: safeTrim(ctx.SenderName),
-        username: safeTrim(ctx.SenderUsername),
-        tag: safeTrim(ctx.SenderTag),
-        e164: safeTrim(ctx.SenderE164),
-      };
+  const senderInfo = {
+    label: resolveSenderLabel({
+      name: safeTrim(ctx.SenderName),
+      username: safeTrim(ctx.SenderUsername),
+      tag: safeTrim(ctx.SenderTag),
+      e164: safeTrim(ctx.SenderE164),
+    }),
+    name: safeTrim(ctx.SenderName),
+    username: safeTrim(ctx.SenderUsername),
+    tag: safeTrim(ctx.SenderTag),
+    e164: safeTrim(ctx.SenderE164),
+  };
   if (senderInfo?.label) {
     blocks.push(
       ["Sender (untrusted metadata):", "```json", JSON.stringify(senderInfo, null, 2), "```"].join(
