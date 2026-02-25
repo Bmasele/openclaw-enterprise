@@ -22,7 +22,13 @@ import {
   resolveReconnectPolicy,
   sleepWithAbort,
 } from "../reconnect.js";
-import { formatError, getWebAuthAgeMs, readWebSelfId } from "../session.js";
+import {
+  hasWebCredsSync,
+  maybeRestoreCredsFromBackup,
+  resolveWebCredsBackupPath,
+  resolveWebCredsPath,
+} from "../auth-store.js";
+import { formatError, getWebAuthAgeMs, readWebSelfId, webAuthExists } from "../session.js";
 import { DEFAULT_WEB_MEDIA_BYTES } from "./constants.js";
 import { whatsappHeartbeatLog, whatsappLog } from "./loggers.js";
 import { buildMentionConfig } from "./mentions.js";
@@ -148,6 +154,17 @@ export async function monitorWebChannel(
 
   while (true) {
     if (stopRequested()) {
+      break;
+    }
+
+    // Don't attempt a WhatsApp connection if there are no credentials on disk.
+    // This prevents wasting connection attempts (and hitting rate limits) when
+    // the user hasn't linked yet or credentials were cleared after a failed scan.
+    if (account.authDir && !(await webAuthExists(account.authDir))) {
+      reconnectLogger.info(
+        { authDir: account.authDir },
+        "web monitor: no WhatsApp credentials on disk — skipping connection attempt",
+      );
       break;
     }
 
@@ -424,6 +441,52 @@ export async function monitorWebChannel(
       break;
     }
 
+    // Handle 405 "Connection Failure" — stale credentials after restart.
+    if (statusCode === 405 || statusCode === 403) {
+      const authDir = account.authDir;
+      if (authDir && reconnectAttempts === 0) {
+        try {
+          const backupPath = resolveWebCredsBackupPath(authDir);
+          const credsPath = resolveWebCredsPath(authDir);
+          const fsSync = await import("node:fs");
+          if (fsSync.existsSync(backupPath)) {
+            const backupRaw = fsSync.readFileSync(backupPath, "utf-8");
+            JSON.parse(backupRaw);
+            fsSync.copyFileSync(backupPath, credsPath);
+            reconnectLogger.info(
+              { connectionId, authDir },
+              "web reconnect: 405 — force-restored creds from backup, retrying",
+            );
+          }
+        } catch {
+          // backup restore failed
+        }
+      } else if (authDir && reconnectAttempts >= 2) {
+        reconnectLogger.warn(
+          { connectionId, status: statusCode, reconnectAttempts },
+          "web reconnect: persistent auth failure (405/403); treating as logged-out",
+        );
+        runtime.error(
+          `WhatsApp session credentials are stale (status ${statusCode}). Please re-scan the QR code from the dashboard settings to relink.`,
+        );
+        await closeListener();
+        break;
+      }
+    }
+
+    // Handle 515 "restart required" — WhatsApp rate limiting.
+    if (statusCode === 515 && reconnectAttempts >= 2) {
+      reconnectLogger.warn(
+        { connectionId, status: statusCode, reconnectAttempts },
+        "web reconnect: repeated 515 (stream errored); WhatsApp may be rate-limiting — stopping retries",
+      );
+      runtime.error(
+        "WhatsApp is rejecting connections (too many attempts). Stopping retries to let the rate limit cool down.",
+      );
+      await closeListener();
+      break;
+    }
+
     reconnectAttempts += 1;
     status.reconnectAttempts = reconnectAttempts;
     emitStatus();
@@ -444,7 +507,12 @@ export async function monitorWebChannel(
       break;
     }
 
-    const delay = computeBackoff(reconnectPolicy, reconnectAttempts);
+    // Use a much longer delay for 515 (stream errored) — WhatsApp is likely
+    // rate-limiting connection attempts, so back off aggressively.
+    const delay =
+      statusCode === 515
+        ? Math.max(60_000, computeBackoff(reconnectPolicy, reconnectAttempts))
+        : computeBackoff(reconnectPolicy, reconnectAttempts);
     reconnectLogger.info(
       {
         connectionId,

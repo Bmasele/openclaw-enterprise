@@ -5,6 +5,7 @@ import { type ChannelId, listChannelPlugins } from "../channels/plugins/index.js
 import { stopGmailWatcher } from "../hooks/gmail-watcher.js";
 import type { HeartbeatRunner } from "../infra/heartbeat-runner.js";
 import type { PluginServicesHandle } from "../plugins/services.js";
+import { flushCredsSave } from "../web/session.js";
 
 export function createGatewayCloseHandler(params: {
   bonjourStop: (() => Promise<void>) | null;
@@ -65,6 +66,10 @@ export function createGatewayCloseHandler(params: {
     for (const plugin of listChannelPlugins()) {
       await params.stopChannel(plugin.id);
     }
+    // Flush any pending WhatsApp credential writes so creds.json is up-to-date
+    // on disk before the process exits.  This prevents stale-credential 405
+    // errors when the container restarts.
+    await flushCredsSave().catch(() => {});
     if (params.pluginServices) {
       await params.pluginServices.stop().catch(() => {});
     }

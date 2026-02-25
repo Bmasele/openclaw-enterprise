@@ -10,11 +10,11 @@ export type ReconnectPolicy = BackoffPolicy & {
 
 export const DEFAULT_HEARTBEAT_SECONDS = 60;
 export const DEFAULT_RECONNECT_POLICY: ReconnectPolicy = {
-  initialMs: 2_000,
-  maxMs: 30_000,
-  factor: 1.8,
+  initialMs: 5_000,
+  maxMs: 60_000,
+  factor: 2.5,
   jitter: 0.25,
-  maxAttempts: 12,
+  maxAttempts: 3,
 };
 
 export function resolveHeartbeatSeconds(cfg: OpenClawConfig, overrideSeconds?: number): number {

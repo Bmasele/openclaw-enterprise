@@ -85,13 +85,25 @@ async function restartLoginSocket(login: ActiveLogin, runtime: RuntimeEnv) {
     return false;
   }
   login.restartAttempted = true;
+
+  // Wait for any pending credential writes to flush to disk.
+  closeSocket(login.sock);
+  await flushCredsSave();
+
+  // Only attempt the restart if pairing actually saved credentials.
+  // If no creds exist, the 515 means WhatsApp is rate-limiting connections
+  // and a restart would just burn another attempt.
+  const hasCreds = await webAuthExists(login.authDir);
+  if (!hasCreds) {
+    runtime.log(
+      info("WhatsApp rejected the connection (code 515). No credentials saved — skipping restart to avoid further rate limiting."),
+    );
+    return false;
+  }
+
   runtime.log(
     info("WhatsApp asked for a restart after pairing (code 515); retrying connection once…"),
   );
-  closeSocket(login.sock);
-  // Wait for any pending credential writes to flush to disk before recreating
-  // the socket — otherwise the new socket may read stale/incomplete creds.
-  await flushCredsSave();
   try {
     const sock = await createWaSocket(false, login.verbose, {
       authDir: login.authDir,
@@ -139,6 +151,21 @@ export async function startWebLoginWithQr(
   }
 
   await resetActiveLogin(account.accountId);
+
+  // When force-relinking, clear stale credentials BEFORE creating the socket.
+  // Otherwise Baileys loads old creds and tries to reconnect with them first,
+  // burning through WhatsApp's rate limit before it even shows a QR code.
+  if (opts.force && hasWeb) {
+    try {
+      await logoutWeb({
+        authDir: account.authDir,
+        isLegacyAuthDir: account.isLegacyAuthDir,
+        runtime,
+      });
+    } catch {
+      // Best-effort — proceed with login attempt regardless
+    }
+  }
 
   let resolveQr: ((qr: string) => void) | null = null;
   let rejectQr: ((err: Error) => void) | null = null;
@@ -280,6 +307,12 @@ export async function waitForWebLogin(
         if (restarted && isLoginFresh(login)) {
           continue;
         }
+        // 515 without successful restart = rate limiting
+        const message =
+          "WhatsApp rejected the connection. This usually happens when there are too many attempts in a short time. Please wait a few minutes and try again.";
+        await resetActiveLogin(account.accountId, message);
+        runtime.log(danger(message));
+        return { connected: false, message };
       }
       const message = `WhatsApp login failed: ${login.error}`;
       await resetActiveLogin(account.accountId, message);
