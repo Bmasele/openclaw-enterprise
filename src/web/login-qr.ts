@@ -90,19 +90,10 @@ async function restartLoginSocket(login: ActiveLogin, runtime: RuntimeEnv) {
   closeSocket(login.sock);
   await flushCredsSave();
 
-  // Only attempt the restart if pairing actually saved credentials.
-  // If no creds exist, the 515 means WhatsApp is rate-limiting connections
-  // and a restart would just burn another attempt.
-  const hasCreds = await webAuthExists(login.authDir);
-  if (!hasCreds) {
-    runtime.log(
-      info("WhatsApp rejected the connection (code 515). No credentials saved — skipping restart to avoid further rate limiting."),
-    );
-    return false;
-  }
-
+  // 515 after QR scan is NORMAL — WhatsApp always disconnects after pairing
+  // so the client can reconnect with the new credentials.
   runtime.log(
-    info("WhatsApp asked for a restart after pairing (code 515); retrying connection once…"),
+    info("WhatsApp asked for a restart after pairing (code 515); reconnecting…"),
   );
   try {
     const sock = await createWaSocket(false, login.verbose, {
@@ -303,14 +294,15 @@ export async function waitForWebLogin(
         return { connected: false, message };
       }
       if (login.errorStatus === 515) {
+        // 515 after QR scan is normal — WhatsApp disconnects so we can
+        // reconnect with the new credentials. Always try to restart.
         const restarted = await restartLoginSocket(login, runtime);
         if (restarted && isLoginFresh(login)) {
           continue;
         }
-        // 515 without successful restart = rate limiting
         const message =
-          "WhatsApp rejected the connection. This usually happens when there are too many attempts in a short time. Please wait a few minutes and try again.";
-        await resetActiveLogin(account.accountId, message);
+          "WhatsApp disconnected after pairing but the reconnection failed. Please try scanning the QR code again.";
+        await resetActiveLogin(account.accountId);
         runtime.log(danger(message));
         return { connected: false, message };
       }
