@@ -13,8 +13,8 @@ import type {
   WebhookContext,
   WebhookVerificationResult,
 } from "../types.js";
-import type { VoiceCallProvider } from "./base.js";
 import { verifyTelnyxWebhook } from "../webhook-security.js";
+import type { VoiceCallProvider } from "./base.js";
 
 /**
  * Telnyx Voice API provider implementation.
@@ -87,7 +87,7 @@ export class TelnyxProvider implements VoiceCallProvider {
       skipVerification: this.options.skipVerification,
     });
 
-    return { ok: result.ok, reason: result.reason };
+    return { ok: result.ok, reason: result.reason, isReplay: result.isReplay };
   }
 
   /**

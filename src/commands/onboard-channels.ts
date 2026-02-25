@@ -1,28 +1,23 @@
-import type { ChannelMeta } from "../channels/plugins/types.js";
-import type { OpenClawConfig } from "../config/config.js";
-import type { DmPolicy } from "../config/types.js";
-import type { RuntimeEnv } from "../runtime.js";
-import type { WizardPrompter, WizardSelectOption } from "../wizard/prompts.js";
-import type { ChannelChoice } from "./onboard-types.js";
-import type {
-  ChannelOnboardingDmPolicy,
-  ChannelOnboardingStatus,
-  SetupChannelsOptions,
-} from "./onboarding/types.js";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
 import { listChannelPluginCatalogEntries } from "../channels/plugins/catalog.js";
 import { resolveChannelDefaultAccountId } from "../channels/plugins/helpers.js";
 import { listChannelPlugins, getChannelPlugin } from "../channels/plugins/index.js";
+import type { ChannelMeta } from "../channels/plugins/types.js";
 import {
   formatChannelPrimerLine,
   formatChannelSelectionLine,
   listChatChannels,
 } from "../channels/registry.js";
 import { formatCliCommand } from "../cli/command-format.js";
+import type { OpenClawConfig } from "../config/config.js";
 import { isChannelConfigured } from "../config/plugin-auto-enable.js";
+import type { DmPolicy } from "../config/types.js";
 import { enablePluginInConfig } from "../plugins/enable.js";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "../routing/session-key.js";
+import type { RuntimeEnv } from "../runtime.js";
 import { formatDocsLink } from "../terminal/links.js";
+import type { WizardPrompter, WizardSelectOption } from "../wizard/prompts.js";
+import type { ChannelChoice } from "./onboard-types.js";
 import {
   ensureOnboardingPluginInstalled,
   reloadOnboardingPluginRegistry,
@@ -31,6 +26,11 @@ import {
   getChannelOnboardingAdapter,
   listChannelOnboardingAdapters,
 } from "./onboarding/registry.js";
+import type {
+  ChannelOnboardingDmPolicy,
+  ChannelOnboardingStatus,
+  SetupChannelsOptions,
+} from "./onboarding/types.js";
 
 type ConfiguredChannelAction = "update" | "disable" | "delete" | "skip";
 
@@ -197,7 +197,7 @@ async function noteChannelPrimer(
       "Multi-user DMs: run: " +
         formatCliCommand('openclaw config set session.dmScope "per-channel-peer"') +
         ' (or "per-account-channel-peer" for multi-account channels) to isolate sessions.',
-      `Docs: ${formatDocsLink("/start/pairing", "start/pairing")}`,
+      `Docs: ${formatDocsLink("/channels/pairing", "channels/pairing")}`,
       "",
       ...channelLines,
     ].join("\n"),
@@ -253,7 +253,7 @@ async function maybeConfigureDmPolicies(params: {
         "Multi-user DMs: run: " +
           formatCliCommand('openclaw config set session.dmScope "per-channel-peer"') +
           ' (or "per-account-channel-peer" for multi-account channels) to isolate sessions.',
-        `Docs: ${formatDocsLink("/start/pairing", "start/pairing")}`,
+        `Docs: ${formatDocsLink("/channels/pairing", "channels/pairing")}`,
       ].join("\n"),
       `${policy.label} DM access`,
     );
@@ -467,6 +467,20 @@ export async function setupChannels(
       workspaceDir,
     });
     if (!getChannelPlugin(channel)) {
+      // Some installs/environments can fail to populate the plugin registry during onboarding,
+      // even for built-in channels. If the channel supports onboarding, proceed with config
+      // so setup isn't blocked; the gateway can still load plugins on startup.
+      const adapter = getChannelOnboardingAdapter(channel);
+      if (adapter) {
+        await prompter.note(
+          `${channel} plugin not available (continuing with onboarding). If the channel still doesn't work after setup, run \`${formatCliCommand(
+            "openclaw plugins list",
+          )}\` and \`${formatCliCommand("openclaw plugins enable " + channel)}\`, then restart the gateway.`,
+          "Channel setup",
+        );
+        await refreshStatus(channel);
+        return true;
+      }
       await prompter.note(`${channel} plugin not available.`, "Channel setup");
       return false;
     }

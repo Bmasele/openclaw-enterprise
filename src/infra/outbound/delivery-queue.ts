@@ -1,10 +1,10 @@
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { ReplyPayload } from "../../auto-reply/types.js";
 import type { OpenClawConfig } from "../../config/config.js";
-import type { OutboundChannel } from "./targets.js";
 import { resolveStateDir } from "../../config/paths.js";
+import { generateSecureUuid } from "../secure-random.js";
+import type { OutboundChannel } from "./targets.js";
 
 const QUEUE_DIRNAME = "delivery-queue";
 const FAILED_DIRNAME = "failed";
@@ -18,9 +18,14 @@ const BACKOFF_MS: readonly number[] = [
   600_000, // retry 4: 10m
 ];
 
-export interface QueuedDelivery {
-  id: string;
-  enqueuedAt: number;
+type DeliveryMirrorPayload = {
+  sessionKey: string;
+  agentId?: string;
+  text?: string;
+  mediaUrls?: string[];
+};
+
+type QueuedDeliveryPayload = {
   channel: Exclude<OutboundChannel, "none">;
   to: string;
   accountId?: string;
@@ -35,12 +40,12 @@ export interface QueuedDelivery {
   bestEffort?: boolean;
   gifPlayback?: boolean;
   silent?: boolean;
-  mirror?: {
-    sessionKey: string;
-    agentId?: string;
-    text?: string;
-    mediaUrls?: string[];
-  };
+  mirror?: DeliveryMirrorPayload;
+};
+
+export interface QueuedDelivery extends QueuedDeliveryPayload {
+  id: string;
+  enqueuedAt: number;
   retryCount: number;
   lastError?: string;
 }
@@ -63,28 +68,14 @@ export async function ensureQueueDir(stateDir?: string): Promise<string> {
 }
 
 /** Persist a delivery entry to disk before attempting send. Returns the entry ID. */
+type QueuedDeliveryParams = QueuedDeliveryPayload;
+
 export async function enqueueDelivery(
-  params: {
-    channel: Exclude<OutboundChannel, "none">;
-    to: string;
-    accountId?: string;
-    payloads: ReplyPayload[];
-    threadId?: string | number | null;
-    replyToId?: string | null;
-    bestEffort?: boolean;
-    gifPlayback?: boolean;
-    silent?: boolean;
-    mirror?: {
-      sessionKey: string;
-      agentId?: string;
-      text?: string;
-      mediaUrls?: string[];
-    };
-  },
+  params: QueuedDeliveryParams,
   stateDir?: string,
 ): Promise<string> {
   const queueDir = await ensureQueueDir(stateDir);
-  const id = crypto.randomUUID();
+  const id = generateSecureUuid();
   const entry: QueuedDelivery = {
     id,
     enqueuedAt: Date.now(),
@@ -194,25 +185,13 @@ export function computeBackoffMs(retryCount: number): number {
   return BACKOFF_MS[Math.min(retryCount - 1, BACKOFF_MS.length - 1)] ?? BACKOFF_MS.at(-1) ?? 0;
 }
 
-export type DeliverFn = (params: {
-  cfg: OpenClawConfig;
-  channel: Exclude<OutboundChannel, "none">;
-  to: string;
-  accountId?: string;
-  payloads: ReplyPayload[];
-  threadId?: string | number | null;
-  replyToId?: string | null;
-  bestEffort?: boolean;
-  gifPlayback?: boolean;
-  silent?: boolean;
-  mirror?: {
-    sessionKey: string;
-    agentId?: string;
-    text?: string;
-    mediaUrls?: string[];
-  };
-  skipQueue?: boolean;
-}) => Promise<unknown>;
+export type DeliverFn = (
+  params: {
+    cfg: OpenClawConfig;
+  } & QueuedDeliveryParams & {
+      skipQueue?: boolean;
+    },
+) => Promise<unknown>;
 
 export interface RecoveryLogger {
   info(msg: string): void;
@@ -303,19 +282,24 @@ export async function recoverPendingDeliveries(opts: {
       recovered += 1;
       opts.log.info(`Recovered delivery ${entry.id} to ${entry.channel}:${entry.to}`);
     } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (isPermanentDeliveryError(errMsg)) {
+        opts.log.warn(`Delivery ${entry.id} hit permanent error — moving to failed/: ${errMsg}`);
+        try {
+          await moveToFailed(entry.id, opts.stateDir);
+        } catch (moveErr) {
+          opts.log.error(`Failed to move entry ${entry.id} to failed/: ${String(moveErr)}`);
+        }
+        failed += 1;
+        continue;
+      }
       try {
-        await failDelivery(
-          entry.id,
-          err instanceof Error ? err.message : String(err),
-          opts.stateDir,
-        );
+        await failDelivery(entry.id, errMsg, opts.stateDir);
       } catch {
         // Best-effort update.
       }
       failed += 1;
-      opts.log.warn(
-        `Retry failed for delivery ${entry.id}: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      opts.log.warn(`Retry failed for delivery ${entry.id}: ${errMsg}`);
     }
   }
 
@@ -326,3 +310,18 @@ export async function recoverPendingDeliveries(opts: {
 }
 
 export { MAX_RETRIES };
+
+const PERMANENT_ERROR_PATTERNS: readonly RegExp[] = [
+  /no conversation reference found/i,
+  /chat not found/i,
+  /user not found/i,
+  /bot was blocked by the user/i,
+  /forbidden: bot was kicked/i,
+  /chat_id is empty/i,
+  /recipient is not a valid/i,
+  /outbound not configured for channel/i,
+];
+
+export function isPermanentDeliveryError(error: string): boolean {
+  return PERMANENT_ERROR_PATTERNS.some((re) => re.test(error));
+}
