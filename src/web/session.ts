@@ -3,6 +3,7 @@ import fsSync from "node:fs";
 import {
   Browsers,
   DisconnectReason,
+  fetchLatestBaileysVersion,
   isJidBroadcast,
   isJidNewsletter,
   makeCacheableSignalKeyStore,
@@ -111,7 +112,26 @@ export async function createWaSocket(
   const sessionLogger = getChildLogger({ module: "web-session" });
   maybeRestoreCredsFromBackup(authDir);
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
+
+  // Fetch WhatsApp protocol version with a timeout fallback.
+  // Without a version, Baileys can't connect and QR is never emitted.
+  // On VPS, GitHub may be slow/rate-limited, so we cap at 10s and fall back to Baileys default.
+  let version: [number, number, number] | undefined;
+  try {
+    const result = await Promise.race([
+      fetchLatestBaileysVersion(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("version fetch timeout")), 10_000),
+      ),
+    ]);
+    version = result.version;
+    sessionLogger.info({ version }, "fetched WhatsApp version");
+  } catch (err) {
+    sessionLogger.warn({ error: String(err) }, "failed to fetch WhatsApp version, using default");
+  }
+
   const sock = makeWASocket({
+    ...(version ? { version } : {}),
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, logger),
