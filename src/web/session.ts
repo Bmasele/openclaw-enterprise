@@ -3,7 +3,8 @@ import fsSync from "node:fs";
 import {
   Browsers,
   DisconnectReason,
-  fetchLatestBaileysVersion,
+  isJidBroadcast,
+  isJidNewsletter,
   makeCacheableSignalKeyStore,
   makeWASocket,
   useMultiFileAuthState,
@@ -110,18 +111,23 @@ export async function createWaSocket(
   const sessionLogger = getChildLogger({ module: "web-session" });
   maybeRestoreCredsFromBackup(authDir);
   const { state, saveCreds } = await useMultiFileAuthState(authDir);
-  const { version } = await fetchLatestBaileysVersion();
   const sock = makeWASocket({
     auth: {
       creds: state.creds,
       keys: makeCacheableSignalKeyStore(state.keys, logger),
     },
-    version,
     logger,
     printQRInTerminal: false,
     browser: Browsers.macOS("Chrome"),
     syncFullHistory: false,
     markOnlineOnConnect: false,
+    generateHighQualityLinkPreview: true,
+    keepAliveIntervalMs: 15_000,
+    connectTimeoutMs: 60_000,
+    defaultQueryTimeoutMs: 60_000,
+    retryRequestDelayMs: 5_000,
+    shouldIgnoreJid: (jid: string) => isJidBroadcast(jid) || isJidNewsletter(jid),
+    getMessage: async () => undefined,
   });
 
   sock.ev.on("creds.update", () => enqueueSaveCreds(authDir, saveCreds, sessionLogger));
