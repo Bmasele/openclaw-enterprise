@@ -57,7 +57,7 @@ export function getAgentScopedMediaLocalRoots(
   const list = agents?.list as Array<Record<string, unknown>> | undefined;
   if (Array.isArray(list)) {
     for (const agent of list) {
-      const ws = agent.workspace;
+      const ws = (agent as Record<string, unknown>).workspace;
       if (typeof ws === "string" && ws.trim()) {
         const resolved = path.resolve(ws);
         if (!roots.includes(resolved)) {
