@@ -41,16 +41,30 @@ export function getAgentScopedMediaLocalRoots(
   agentId?: string,
 ): readonly string[] {
   const roots = buildMediaLocalRoots(resolveStateDir());
-  if (!agentId?.trim()) {
-    return roots;
+  if (agentId?.trim()) {
+    const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
+    if (workspaceDir) {
+      const normalizedWorkspaceDir = path.resolve(workspaceDir);
+      if (!roots.includes(normalizedWorkspaceDir)) {
+        roots.push(normalizedWorkspaceDir);
+      }
+    }
   }
-  const workspaceDir = resolveAgentWorkspaceDir(cfg, agentId);
-  if (!workspaceDir) {
-    return roots;
-  }
-  const normalizedWorkspaceDir = path.resolve(workspaceDir);
-  if (!roots.includes(normalizedWorkspaceDir)) {
-    roots.push(normalizedWorkspaceDir);
+  // Always include all agent workspace directories so that gateway-routed
+  // messages (where agentId may be resolved differently) can still access
+  // files created by any agent.
+  const agents = cfg.agents as Record<string, unknown> | undefined;
+  const list = agents?.list as Array<Record<string, unknown>> | undefined;
+  if (Array.isArray(list)) {
+    for (const agent of list) {
+      const ws = agent.workspace;
+      if (typeof ws === "string" && ws.trim()) {
+        const resolved = path.resolve(ws);
+        if (!roots.includes(resolved)) {
+          roots.push(resolved);
+        }
+      }
+    }
   }
   return roots;
 }
