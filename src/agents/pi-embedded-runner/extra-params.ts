@@ -396,6 +396,32 @@ function createOpenRouterSystemCacheWrapper(baseStreamFn: StreamFn | undefined):
 }
 
 /**
+ * Inject cache_control into the last tool definition in the API payload.
+ * Tool definitions are static and sent with every request — caching them
+ * avoids re-processing on every turn. Works for both direct Anthropic and
+ * OpenRouter Anthropic models.
+ */
+function createToolsCacheWrapper(baseStreamFn: StreamFn | undefined): StreamFn {
+  const underlying = baseStreamFn ?? streamSimple;
+  return (model, context, options) => {
+    const originalOnPayload = options?.onPayload;
+    return underlying(model, context, {
+      ...options,
+      onPayload: (payload) => {
+        const tools = (payload as Record<string, unknown>)?.tools;
+        if (Array.isArray(tools) && tools.length > 0) {
+          const lastTool = tools[tools.length - 1];
+          if (lastTool && typeof lastTool === "object") {
+            (lastTool as Record<string, unknown>).cache_control = { type: "ephemeral" };
+          }
+        }
+        originalOnPayload?.(payload);
+      },
+    });
+  };
+}
+
+/**
  * Map OpenClaw's ThinkLevel to OpenRouter's reasoning.effort values.
  * "off" maps to "none"; all other levels pass through as-is.
  */
@@ -686,6 +712,12 @@ export function applyExtraParamsToAgent(
     const openRouterThinkingLevel = modelId === "auto" ? undefined : thinkingLevel;
     agent.streamFn = createOpenRouterWrapper(agent.streamFn, openRouterThinkingLevel);
     agent.streamFn = createOpenRouterSystemCacheWrapper(agent.streamFn);
+  }
+
+  // Cache tool definitions for Anthropic models (direct and OpenRouter).
+  // Tools are static and sent every request — caching saves re-processing.
+  if (provider === "anthropic" || provider === "openrouter") {
+    agent.streamFn = createToolsCacheWrapper(agent.streamFn);
   }
 
   if (provider === "amazon-bedrock" && !isAnthropicBedrockModel(modelId)) {
