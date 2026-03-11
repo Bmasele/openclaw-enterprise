@@ -147,11 +147,9 @@ async function fetchHttpJson<T>(
     const res = await fetch(url, { ...init, signal: ctrl.signal });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      // 4xx = bad input, not a service outage
-      if (res.status >= 400 && res.status < 500) {
-        throw new BrowserValidationError(text || `HTTP ${res.status}`);
-      }
-      throw new Error(text || `HTTP ${res.status}`);
+      // The server responded — the service is reachable. Pass through the
+      // actual error so the LLM can self-correct.
+      throw new BrowserValidationError(text || `HTTP ${res.status}`);
     }
     return (await res.json()) as T;
   } finally {
@@ -246,12 +244,10 @@ export async function fetchBrowserJson<T>(
         result.body && typeof result.body === "object" && "error" in result.body
           ? String((result.body as { error?: unknown }).error)
           : `HTTP ${result.status}`;
-      // 4xx = bad input from the model, not a service outage. Throw the
-      // validation message directly so the LLM can self-correct.
-      if (result.status < 500) {
-        throw new BrowserValidationError(message);
-      }
-      throw new Error(message);
+      // The dispatcher responded — the service is reachable. Pass through the
+      // actual error so the LLM can self-correct instead of thinking the
+      // service is down.
+      throw new BrowserValidationError(message);
     }
     return result.body as T;
   } catch (err) {
