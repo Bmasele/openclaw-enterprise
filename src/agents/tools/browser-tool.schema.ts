@@ -46,27 +46,37 @@ const BROWSER_IMAGE_TYPES = ["png", "jpeg"] as const;
 // because Claude API on Vertex AI rejects nested anyOf schemas as invalid JSON Schema.
 // The discriminator (kind) determines which properties are relevant; runtime validates.
 const BrowserActSchema = Type.Object({
-  kind: stringEnum(BROWSER_ACT_KINDS),
+  kind: stringEnum(BROWSER_ACT_KINDS, {
+    description:
+      "Action kind. " +
+      "click: click an element (ref required). " +
+      "type: type text into an input/textarea (ref + text required — use this for filling form fields, NOT press). " +
+      "press: press a keyboard key like Enter, Tab, Escape (key required — do NOT use for typing text). " +
+      "fill: fill multiple form fields at once (fields array required, each with ref + type + value). " +
+      "hover/drag/select/resize/wait/evaluate: see docs.",
+  }),
   // Common fields
-  targetId: Type.Optional(Type.String()),
-  ref: Type.Optional(Type.String()),
+  targetId: Type.Optional(Type.String({ description: "Tab target ID from snapshot response" })),
+  ref: Type.Optional(Type.String({ description: "Element ref from snapshot (e.g. 'e12')" })),
   // click
   doubleClick: Type.Optional(Type.Boolean()),
   button: Type.Optional(Type.String()),
   modifiers: Type.Optional(Type.Array(Type.String())),
-  // type
-  text: Type.Optional(Type.String()),
+  // type — for entering text into form fields
+  text: Type.Optional(Type.String({ description: "Text to type into the element (for kind=type)" })),
   submit: Type.Optional(Type.Boolean()),
   slowly: Type.Optional(Type.Boolean()),
-  // press
-  key: Type.Optional(Type.String()),
+  // press — for keyboard shortcuts and special keys only
+  key: Type.Optional(Type.String({ description: "Key to press (for kind=press). E.g. Enter, Tab, Escape, Control+a" })),
   // drag
   startRef: Type.Optional(Type.String()),
   endRef: Type.Optional(Type.String()),
   // select
   values: Type.Optional(Type.Array(Type.String())),
   // fill - use permissive array of objects
-  fields: Type.Optional(Type.Array(Type.Object({}, { additionalProperties: true }))),
+  fields: Type.Optional(Type.Array(Type.Object({}, { additionalProperties: true }), {
+    description: "For kind=fill: array of {ref, type, value} objects to fill multiple fields at once",
+  })),
   // resize
   width: Type.Optional(Type.Number()),
   height: Type.Optional(Type.Number()),

@@ -52,7 +52,6 @@ export function registerBrowserAgentActRoutes(
 ) {
   app.post("/act", async (req, res) => {
     const body = readBody(req);
-    console.log(`[browser-act] incoming body: ${JSON.stringify(body).slice(0, 800)}`);
     const kindRaw = toStringOrEmpty(body.kind);
     if (!isActKind(kindRaw)) {
       return jsonError(res, 400, "kind is required");
@@ -214,9 +213,6 @@ export function registerBrowserAgentActRoutes(
             return res.json({ ok: true, targetId: tab.targetId });
           }
           case "fill": {
-            console.log(`[browser-act] fill body keys: ${Object.keys(body).join(", ")}`);
-            console.log(`[browser-act] fill body.fields: ${JSON.stringify(body.fields)}`);
-            console.log(`[browser-act] fill full body: ${JSON.stringify(body).slice(0, 500)}`);
             const rawFields = Array.isArray(body.fields) ? body.fields : [];
             const fields = rawFields
               .map((field) => {
