@@ -35,7 +35,7 @@ class ScreencastManager {
       this.cdpSession = session;
 
       // Handle CDP session disconnect (browser crash/close/tab close)
-      session.on("close", () => {
+      session.on("close" as string, () => {
         if (this.cdpSession === session) {
           const prevRunId = this.runId;
           const prevSessionKey = this.sessionKey;
