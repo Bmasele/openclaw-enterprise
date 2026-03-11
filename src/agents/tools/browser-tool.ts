@@ -22,7 +22,7 @@ import {
   browserTabs,
 } from "../../browser/client.js";
 import { solveCaptcha as solveCaptchaOnPage } from "../../browser/captcha-solver.js";
-import { resolveBrowserConfig, resolveProfile } from "../../browser/config.js";
+import { resolveBrowserConfig } from "../../browser/config.js";
 import { DEFAULT_AI_SNAPSHOT_MAX_CHARS } from "../../browser/constants.js";
 import { DEFAULT_UPLOAD_DIR, resolveExistingPathsWithinRoot } from "../../browser/paths.js";
 import { applyBrowserProxyPaths, persistBrowserProxyFiles } from "../../browser/proxy-files.js";
@@ -827,25 +827,39 @@ export function createBrowserTool(opts?: {
           if (nodeTarget) {
             throw new Error("solveCaptcha is not supported on node-proxied browsers.");
           }
-          const cfg = loadConfig();
-          const resolvedCfg = resolveBrowserConfig(cfg.browser, cfg);
-          if (!resolvedCfg.captchaSolver) {
-            throw new Error(
-              "CAPTCHA solver not configured. Set browser.captchaSolver.provider and browser.captchaSolver.apiKey in openclaw.json.",
-            );
-          }
           const captchaTargetId = readStringParam(params, "targetId");
-          // Resolve CDP URL for the profile
-          const profileName = profile ?? resolvedCfg.defaultProfile;
-          const resolvedProfile = resolveProfile(resolvedCfg, profileName);
-          if (!resolvedProfile) {
-            throw new Error(`Browser profile "${profileName}" not found.`);
+          const captchaCfg = loadConfig();
+          const captchaResolved = resolveBrowserConfig(captchaCfg.browser, captchaCfg);
+          // Resolve CDP URL from profile
+          const captchaProfile = captchaResolved.profiles[profile ?? captchaResolved.defaultProfile];
+          if (!captchaProfile) {
+            throw new Error(`Browser profile "${profile ?? captchaResolved.defaultProfile}" not found.`);
+          }
+          const captchaCdpUrl = captchaProfile.cdpUrl?.trim()
+            || (captchaProfile.cdpPort
+              ? `${captchaResolved.cdpProtocol}://${captchaResolved.cdpHost}:${captchaProfile.cdpPort}`
+              : undefined);
+          if (!captchaCdpUrl) {
+            throw new Error("Cannot resolve CDP URL for browser profile.");
           }
           const page = await getPageForTargetId({
-            cdpUrl: resolvedProfile.cdpUrl,
+            cdpUrl: captchaCdpUrl,
             targetId: captchaTargetId ?? undefined,
           });
-          const solveResult = await solveCaptchaOnPage(page, resolvedCfg.captchaSolver);
+          const solveResult = await solveCaptchaOnPage(page);
+          if (solveResult.screenshotPath) {
+            return await imageResultFromFile({
+              label: "browser:captcha",
+              path: solveResult.screenshotPath,
+              extraText: JSON.stringify({
+                captchaType: solveResult.captchaType,
+                status: solveResult.status,
+                nextStep: solveResult.nextStep,
+                details: solveResult.details,
+              }, null, 2),
+              details: solveResult,
+            });
+          }
           return jsonResult(solveResult);
         }
         default:

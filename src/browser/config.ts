@@ -34,7 +34,6 @@ export type ResolvedBrowserConfig = {
   profiles: Record<string, BrowserProfileConfig>;
   ssrfPolicy?: SsrFPolicy;
   extraArgs: string[];
-  captchaSolver?: { provider: string; apiKey: string };
 };
 
 export type ResolvedBrowserProfile = {
@@ -243,10 +242,6 @@ export function resolveBrowserConfig(
     ? cfg.extraArgs.filter((a): a is string => typeof a === "string" && a.trim().length > 0)
     : [];
   const ssrfPolicy = resolveBrowserSsrFPolicy(cfg);
-  const captchaSolver =
-    cfg?.captchaSolver?.provider && cfg.captchaSolver.apiKey
-      ? { provider: cfg.captchaSolver.provider, apiKey: cfg.captchaSolver.apiKey }
-      : undefined;
 
   return {
     enabled,
@@ -266,7 +261,6 @@ export function resolveBrowserConfig(
     profiles,
     ssrfPolicy,
     extraArgs,
-    captchaSolver,
   };
 }
 
