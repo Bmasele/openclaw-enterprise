@@ -55,12 +55,15 @@ function tryStartScreencast(args: unknown, runId: string, sessionKey?: string): 
         ? record.targetId.trim()
         : undefined;
     getPageForTargetId({ cdpUrl: profile.cdpUrl, targetId })
-      .then((page) => screencastManager.start(page, runId, sessionKey))
-      .catch(() => {
-        // Best-effort: screencast start failed, silently ignore
+      .then((page) => {
+        console.log(`[screencast] got page, starting screencast for runId=${runId}`);
+        return screencastManager.start(page, runId, sessionKey);
+      })
+      .catch((err) => {
+        console.error(`[screencast] failed to start: ${String(err)}`);
       });
-  } catch {
-    // Config resolution failed — skip screencast
+  } catch (err) {
+    console.error(`[screencast] config resolution failed: ${String(err)}`);
   }
 }
 

@@ -74,6 +74,7 @@ class ScreencastManager {
       });
 
       this.starting = false;
+      console.log(`[screencast] CDP screencast started for runId=${runId}`);
 
       // Emit start control event
       emitAgentEvent({
@@ -82,7 +83,8 @@ class ScreencastManager {
         stream: "screencast",
         data: { phase: "start" },
       });
-    } catch {
+    } catch (err) {
+      console.error(`[screencast] CDP screencast start error: ${String(err)}`);
       this.cdpSession = null;
       this.starting = false;
       this.runId = null;
