@@ -4,6 +4,10 @@ import { emitAgentEvent } from "../infra/agent-events.js";
 /**
  * Singleton managing CDP Page.screencast lifecycle.
  * Streams JPEG frames as agent events for real-time browser preview.
+ *
+ * The screencast persists across agent turns (run boundaries) — it only
+ * stops when the browser "stop" action is called or the CDP session
+ * disconnects (browser crash/close).
  */
 class ScreencastManager {
   private cdpSession: CDPSession | null = null;
@@ -12,7 +16,13 @@ class ScreencastManager {
   private sessionKey: string | undefined;
 
   async start(page: Page, runId: string, sessionKey?: string): Promise<void> {
-    if (this.cdpSession || this.starting) {
+    // If already active, just update the runId so frames route to the current run
+    if (this.cdpSession) {
+      this.runId = runId;
+      this.sessionKey = sessionKey;
+      return;
+    }
+    if (this.starting) {
       return;
     }
     this.starting = true;
@@ -22,6 +32,26 @@ class ScreencastManager {
     try {
       const session = await page.context().newCDPSession(page);
       this.cdpSession = session;
+
+      // Handle CDP session disconnect (browser crash/close/tab close)
+      session.on("CDPSession.Disconnected", () => {
+        if (this.cdpSession === session) {
+          const prevRunId = this.runId;
+          const prevSessionKey = this.sessionKey;
+          this.cdpSession = null;
+          this.starting = false;
+          this.runId = null;
+          this.sessionKey = undefined;
+          if (prevRunId) {
+            emitAgentEvent({
+              runId: prevRunId,
+              sessionKey: prevSessionKey,
+              stream: "screencast",
+              data: { phase: "stop" },
+            });
+          }
+        }
+      });
 
       session.on("Page.screencastFrame", (params: { data: string; metadata: unknown; sessionId: number }) => {
         if (this.runId) {

@@ -1,4 +1,3 @@
-import { screencastManager } from "../browser/screencast-manager.js";
 import { emitAgentEvent } from "../infra/agent-events.js";
 import { createInlineCodeState } from "../markdown/code-spans.js";
 import { formatAssistantErrorText } from "./pi-embedded-helpers.js";
@@ -27,11 +26,6 @@ export function handleAgentStart(ctx: EmbeddedPiSubscribeContext) {
 }
 
 export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext) {
-  // Stop screencast before lifecycle events so the stop event uses valid seq tracking
-  if (screencastManager.isActive()) {
-    screencastManager.stop().catch(() => {});
-  }
-
   const lastAssistant = ctx.state.lastAssistant;
   const isError = isAssistantMessage(lastAssistant) && lastAssistant.stopReason === "error";
 

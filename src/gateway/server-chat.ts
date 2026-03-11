@@ -455,10 +455,10 @@ export function createAgentEventHandler({
     const isScreencastEvent = evt.stream === "screencast";
     if (isScreencastEvent) {
       const isControlFrame = evt.data?.phase === "start" || evt.data?.phase === "stop";
-      const recipients = toolEventRecipients.get(evt.runId);
-      if (recipients && recipients.size > 0) {
-        broadcastToConnIds("agent", agentPayload, recipients, { dropIfSlow: !isControlFrame });
-      }
+      // Broadcast screencast to ALL connected WS clients (not just toolEventRecipients)
+      // because the screencast persists across agent runs and the runId-keyed registry
+      // may expire between turns.
+      broadcast("agent", agentPayload, { dropIfSlow: !isControlFrame });
       return; // screencast events don't need chat/lifecycle processing
     }
     if (isToolEvent) {
