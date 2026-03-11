@@ -32,6 +32,7 @@ const BROWSER_TOOL_ACTIONS = [
   "upload",
   "dialog",
   "act",
+  "solveCaptcha",
 ] as const;
 
 const BROWSER_TARGETS = ["sandbox", "host", "node"] as const;

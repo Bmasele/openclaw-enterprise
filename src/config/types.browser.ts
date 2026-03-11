@@ -62,4 +62,11 @@ export type BrowserConfig = {
    * Example: ["--window-size=1920,1080", "--disable-infobars"]
    */
   extraArgs?: string[];
+  /** CAPTCHA solver for automated CAPTCHA solving via external services. */
+  captchaSolver?: {
+    /** Provider name (e.g. "2captcha"). */
+    provider?: string;
+    /** API key for the solving service. */
+    apiKey?: string;
+  };
 };

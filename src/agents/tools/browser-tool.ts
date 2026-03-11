@@ -9,6 +9,7 @@ import {
   browserPdfSave,
   browserScreenshotAction,
 } from "../../browser/client-actions.js";
+import { getPageForTargetId } from "../../browser/pw-session.js";
 import {
   browserCloseTab,
   browserFocusTab,
@@ -20,7 +21,8 @@ import {
   browserStop,
   browserTabs,
 } from "../../browser/client.js";
-import { resolveBrowserConfig } from "../../browser/config.js";
+import { solveCaptcha as solveCaptchaOnPage } from "../../browser/captcha-solver.js";
+import { resolveBrowserConfig, resolveProfile } from "../../browser/config.js";
 import { DEFAULT_AI_SNAPSHOT_MAX_CHARS } from "../../browser/constants.js";
 import { DEFAULT_UPLOAD_DIR, resolveExistingPathsWithinRoot } from "../../browser/paths.js";
 import { applyBrowserProxyPaths, persistBrowserProxyFiles } from "../../browser/proxy-files.js";
@@ -820,6 +822,31 @@ export function createBrowserTool(opts?: {
             }
             throw err;
           }
+        }
+        case "solveCaptcha": {
+          if (nodeTarget) {
+            throw new Error("solveCaptcha is not supported on node-proxied browsers.");
+          }
+          const cfg = loadConfig();
+          const resolvedCfg = resolveBrowserConfig(cfg.browser, cfg);
+          if (!resolvedCfg.captchaSolver) {
+            throw new Error(
+              "CAPTCHA solver not configured. Set browser.captchaSolver.provider and browser.captchaSolver.apiKey in openclaw.json.",
+            );
+          }
+          const captchaTargetId = readStringParam(params, "targetId");
+          // Resolve CDP URL for the profile
+          const profileName = profile ?? resolvedCfg.defaultProfile;
+          const resolvedProfile = resolveProfile(resolvedCfg, profileName);
+          if (!resolvedProfile) {
+            throw new Error(`Browser profile "${profileName}" not found.`);
+          }
+          const page = await getPageForTargetId({
+            cdpUrl: resolvedProfile.cdpUrl,
+            targetId: captchaTargetId ?? undefined,
+          });
+          const solveResult = await solveCaptchaOnPage(page, resolvedCfg.captchaSolver);
+          return jsonResult(solveResult);
         }
         default:
           throw new Error(`Unknown action: ${action}`);
