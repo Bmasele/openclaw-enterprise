@@ -53,14 +53,11 @@ function tryStartScreencast(args: unknown, runId: string, sessionKey?: string): 
         : undefined;
     getPageForTargetId({ cdpUrl: profile.cdpUrl, targetId })
       .then((page) => {
-        console.log(`[screencast] got page, starting screencast for runId=${runId}`);
         return screencastManager.start(page, runId, sessionKey);
       })
-      .catch((err) => {
-        console.error(`[screencast] failed to start: ${String(err)}`);
-      });
-  } catch (err) {
-    console.error(`[screencast] config resolution failed: ${String(err)}`);
+      .catch(() => {});
+  } catch {
+    // best-effort
   }
 }
 

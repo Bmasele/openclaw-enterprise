@@ -1,3 +1,10 @@
+class BrowserValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BrowserValidationError";
+  }
+}
+
 import { formatCliCommand } from "../cli/command-format.js";
 import { loadConfig } from "../config/config.js";
 import { isLoopbackHost } from "../gateway/net.js";
@@ -140,6 +147,10 @@ async function fetchHttpJson<T>(
     const res = await fetch(url, { ...init, signal: ctrl.signal });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
+      // 4xx = bad input, not a service outage
+      if (res.status >= 400 && res.status < 500) {
+        throw new BrowserValidationError(text || `HTTP ${res.status}`);
+      }
       throw new Error(text || `HTTP ${res.status}`);
     }
     return (await res.json()) as T;
@@ -235,10 +246,18 @@ export async function fetchBrowserJson<T>(
         result.body && typeof result.body === "object" && "error" in result.body
           ? String((result.body as { error?: unknown }).error)
           : `HTTP ${result.status}`;
+      // 4xx = bad input from the model, not a service outage. Throw the
+      // validation message directly so the LLM can self-correct.
+      if (result.status < 500) {
+        throw new BrowserValidationError(message);
+      }
       throw new Error(message);
     }
     return result.body as T;
   } catch (err) {
+    if (err instanceof BrowserValidationError) {
+      throw err; // Don't wrap validation errors — let the model see the real message
+    }
     throw enhanceBrowserFetchError(url, err, timeoutMs);
   }
 }

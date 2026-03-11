@@ -455,8 +455,6 @@ export function createAgentEventHandler({
     const isScreencastEvent = evt.stream === "screencast";
     if (isScreencastEvent) {
       const isControlFrame = evt.data?.phase === "start" || evt.data?.phase === "stop";
-      const frameLen = typeof evt.data?.frame === "string" ? (evt.data.frame as string).length : 0;
-      console.log(`[screencast-gw] broadcasting: phase=${evt.data?.phase ?? "frame"} frameLen=${frameLen} isControl=${isControlFrame}`);
       // Broadcast screencast to ALL connected WS clients (not just toolEventRecipients)
       // because the screencast persists across agent runs and the runId-keyed registry
       // may expire between turns.
