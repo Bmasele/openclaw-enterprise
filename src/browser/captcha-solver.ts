@@ -495,10 +495,16 @@ export async function solveCaptcha(page: Page): Promise<CaptchaSolveResult> {
       `1. Use action='snapshot' with frame='${BFRAME_SELECTOR}' to get clickable element refs for the tiles inside the challenge iframe.\n` +
       "2. Look at the screenshot to identify which tiles match the challenge instruction.\n" +
       "3. Click each matching tile using action='act' with kind='click' and the tile's ref.\n" +
-      "4. After clicking ALL matching tiles, click the 'Verify' or 'Next' button (also visible in the snapshot refs).\n" +
-      "5. Call solveCaptcha again to check if solved or if a new challenge appeared.\n" +
-      "6. If new tiles fade in to replace clicked ones, identify and click the new matching tiles too before verifying.\n" +
-      "NEVER give up or say 'CAPTCHA is too hard'. Keep trying until it's solved.",
+      "4. BEFORE clicking Verify/Next: take another screenshot to double-check your selections. " +
+      "Look carefully — did you miss any tiles? Are there tiles you selected that DON'T actually match? " +
+      "If you missed any, click them. If you wrongly selected one, click it again to deselect.\n" +
+      "5. Once you're confident ALL matching tiles are selected and ONLY matching tiles, click 'Verify' or 'Next'.\n" +
+      "6. Call solveCaptcha again to check if solved or if a new challenge appeared.\n" +
+      "7. If new tiles fade in to replace clicked ones, identify and click the new matching tiles too before verifying.\n" +
+      "CRITICAL: Google reCAPTCHA typically shows 3-6 rounds of challenges. This is NORMAL — it DOES end. " +
+      "You MUST keep solving every round until the CAPTCHA is fully resolved. " +
+      "NEVER give up, NEVER say it will 'go on forever', NEVER close the browser to avoid solving. " +
+      "Keep going round after round until it's done.",
     details: {
       ...captcha,
       challengeText,
