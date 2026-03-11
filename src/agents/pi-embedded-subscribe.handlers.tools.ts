@@ -277,10 +277,6 @@ export async function handleToolExecutionStart(
     ctx.emitToolSummary(toolName, meta);
   }
 
-  // Start screencast for browser tool actions (except passive ones)
-  if (toolName === "browser") {
-    tryStartScreencast(args, ctx.params.runId, (ctx.params as Record<string, unknown>).sessionKey as string | undefined);
-  }
 
   // Track messaging tool sends (pending until confirmed in tool_execution_end).
   if (isMessagingTool(toolName)) {
@@ -430,12 +426,15 @@ export async function handleToolExecutionEnd(
     ctx.state.successfulCronAdds += 1;
   }
 
-  // Stop screencast when browser tool "stop" action completes
+  // Screencast lifecycle for browser tool
   if (toolName === "browser" && !isToolError) {
     const browserAction =
       typeof startArgs.action === "string" ? startArgs.action.trim().toLowerCase() : "";
     if (browserAction === "stop") {
       screencastManager.stop().catch(() => {});
+    } else {
+      // Start screencast after tool completes (Chromium is now running on its CDP port)
+      tryStartScreencast(startArgs, ctx.params.runId, (ctx.params as Record<string, unknown>).sessionKey as string | undefined);
     }
   }
 
