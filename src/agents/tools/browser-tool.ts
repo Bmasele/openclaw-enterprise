@@ -848,15 +848,22 @@ export function createBrowserTool(opts?: {
           });
           const solveResult = await solveCaptchaOnPage(page);
           if (solveResult.screenshotPath) {
+            // Build prominent text so the model clearly sees the challenge
+            const lines: string[] = [];
+            lines.push(`CAPTCHA STATUS: ${solveResult.status}`);
+            if (solveResult.challengeText) {
+              lines.push(`CHALLENGE: ${solveResult.challengeText}`);
+            }
+            if (solveResult.gridSize) {
+              lines.push(`GRID: ${solveResult.gridSize}`);
+            }
+            if (solveResult.nextStep) {
+              lines.push(`\nINSTRUCTIONS: ${solveResult.nextStep}`);
+            }
             return await imageResultFromFile({
               label: "browser:captcha",
               path: solveResult.screenshotPath,
-              extraText: JSON.stringify({
-                captchaType: solveResult.captchaType,
-                status: solveResult.status,
-                nextStep: solveResult.nextStep,
-                details: solveResult.details,
-              }, null, 2),
+              extraText: lines.join("\n"),
               details: solveResult,
             });
           }
