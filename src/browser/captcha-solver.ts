@@ -157,20 +157,52 @@ async function isChallengeVisible(page: Page): Promise<boolean> {
 }
 
 /**
+ * Wait for the challenge content to load inside the iframe.
+ * The iframe element can be visible before its inner content renders.
+ */
+async function waitForChallengeContent(page: Page, timeoutMs = 5000): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const frame = getChallengeFrameLocator(page);
+      // Check if the instruction text element exists
+      const instructionEl = frame.locator(
+        '.rc-imageselect-desc-wrapper, .rc-imageselect-desc, .rc-imageselect-instructions',
+      );
+      const count = await instructionEl.count();
+      if (count > 0) {
+        const text = await instructionEl.first().innerText({ timeout: 1000 });
+        if (text && text.trim().length > 5) return true;
+      }
+    } catch {
+      // content not ready yet
+    }
+    await page.waitForTimeout(500);
+  }
+  return false;
+}
+
+/**
  * Extract the challenge instruction text from inside the challenge iframe.
  * e.g. "Select all images with buses" or "Select all squares with crosswalks"
  */
 async function extractChallengeText(page: Page): Promise<string | undefined> {
   try {
     const frame = getChallengeFrameLocator(page);
-    // The instruction is in .rc-imageselect-desc-wrapper or .rc-imageselect-instructions
-    const instructionEl = frame.locator(
-      '.rc-imageselect-desc-wrapper, .rc-imageselect-desc, .rc-imageselect-instructions',
-    );
-    const count = await instructionEl.count();
-    if (count > 0) {
-      const text = await instructionEl.first().innerText();
-      return text.trim();
+    // Try multiple selectors — Google varies the DOM structure
+    const selectors = [
+      '.rc-imageselect-desc-wrapper',
+      '.rc-imageselect-desc',
+      '.rc-imageselect-instructions',
+      '.rc-imageselect-desc-no-canonical',
+    ];
+    for (const sel of selectors) {
+      const el = frame.locator(sel);
+      const count = await el.count();
+      if (count > 0) {
+        const text = await el.first().innerText({ timeout: 2000 });
+        if (text && text.trim().length > 3) return text.trim();
+      }
     }
   } catch {
     // ignore
@@ -184,7 +216,7 @@ async function extractChallengeText(page: Page): Promise<string | undefined> {
 async function detectGridSize(page: Page): Promise<string | undefined> {
   try {
     const frame = getChallengeFrameLocator(page);
-    // Check for 4x4 grid (rc-imageselect-dynamic-selected or table with 4 cols)
+    // Check for table with grid class
     const table = frame.locator('table.rc-imageselect-table-44, table.rc-imageselect-table-33');
     const count = await table.count();
     if (count > 0) {
@@ -192,11 +224,16 @@ async function detectGridSize(page: Page): Promise<string | undefined> {
       if (cls?.includes("44")) return "4x4";
       if (cls?.includes("33")) return "3x3";
     }
-    // Fallback: count tiles
+    // Fallback: count tiles by td elements
     const tiles = frame.locator('td.rc-imageselect-tile');
     const tileCount = await tiles.count();
     if (tileCount === 16) return "4x4";
     if (tileCount === 9) return "3x3";
+    // Fallback: count by image divs
+    const imgDivs = frame.locator('.rc-image-tile-wrapper');
+    const imgDivCount = await imgDivs.count();
+    if (imgDivCount === 16) return "4x4";
+    if (imgDivCount === 9) return "3x3";
   } catch {
     // ignore
   }
@@ -434,10 +471,13 @@ export async function solveCaptcha(page: Page): Promise<CaptchaSolveResult> {
     };
   }
 
-  // 4. Image challenge is visible — screenshot it at high resolution
+  // 4. Image challenge is visible — wait for content to load, then screenshot
+  await waitForChallengeContent(page, 5000);
   const challengeText = await extractChallengeText(page);
   const gridSize = await detectGridSize(page);
   const screenshotPath = await screenshotChallenge(page, "challenge");
+
+  const BFRAME_SELECTOR = 'iframe[src*="recaptcha/api2/bframe"], iframe[src*="recaptcha/enterprise/bframe"]';
 
   return {
     ok: true,
@@ -451,11 +491,14 @@ export async function solveCaptcha(page: Page): Promise<CaptchaSolveResult> {
       "This screenshot shows ONLY the challenge popup at full resolution. " +
       "CAREFULLY examine each tile in the grid. " +
       "The tiles are numbered left-to-right, top-to-bottom (tile 1 = top-left, tile 9 = bottom-right for 3x3). " +
-      "To click tiles, use the browser act action to click inside the challenge iframe. " +
-      "Use action='snapshot' with frame='recaptcha' to get clickable refs for the tiles, then click each correct tile. " +
-      "After selecting ALL matching tiles, click the Verify/Next button. " +
-      "If new tiles appear (some tiles refresh), select the new matching ones too. " +
-      "Call solveCaptcha again after clicking Verify to check if solved or if a new challenge appeared.",
+      "DO NOT GIVE UP. You MUST solve this CAPTCHA. Follow these steps:\n" +
+      `1. Use action='snapshot' with frame='${BFRAME_SELECTOR}' to get clickable element refs for the tiles inside the challenge iframe.\n` +
+      "2. Look at the screenshot to identify which tiles match the challenge instruction.\n" +
+      "3. Click each matching tile using action='act' with kind='click' and the tile's ref.\n" +
+      "4. After clicking ALL matching tiles, click the 'Verify' or 'Next' button (also visible in the snapshot refs).\n" +
+      "5. Call solveCaptcha again to check if solved or if a new challenge appeared.\n" +
+      "6. If new tiles fade in to replace clicked ones, identify and click the new matching tiles too before verifying.\n" +
+      "NEVER give up or say 'CAPTCHA is too hard'. Keep trying until it's solved.",
     details: {
       ...captcha,
       challengeText,
