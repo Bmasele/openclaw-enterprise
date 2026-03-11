@@ -452,6 +452,15 @@ export function createAgentEventHandler({
       });
     }
     agentRunSeq.set(evt.runId, evt.seq);
+    const isScreencastEvent = evt.stream === "screencast";
+    if (isScreencastEvent) {
+      const isControlFrame = evt.data?.phase === "start" || evt.data?.phase === "stop";
+      const recipients = toolEventRecipients.get(evt.runId);
+      if (recipients && recipients.size > 0) {
+        broadcastToConnIds("agent", agentPayload, recipients, { dropIfSlow: !isControlFrame });
+      }
+      return; // screencast events don't need chat/lifecycle processing
+    }
     if (isToolEvent) {
       // Always broadcast tool events to registered WS recipients with
       // tool-events capability, regardless of verboseLevel. The verbose

@@ -20,9 +20,49 @@ import {
 import { inferToolMetaFromArgs } from "./pi-embedded-utils.js";
 import { buildToolMutationState, isSameToolMutationAction } from "./tool-mutation.js";
 import { normalizeToolName } from "./tool-policy.js";
+import { screencastManager } from "../browser/screencast-manager.js";
+import { getPageForTargetId } from "../browser/pw-session.js";
+import { resolveBrowserConfig, resolveProfile } from "../browser/config.js";
+import { loadConfig } from "../config/config.js";
 
 /** Track tool execution start times and args for after_tool_call hook */
 const toolStartData = new Map<string, { startTime: number; args: unknown }>();
+
+function tryStartScreencast(args: unknown, runId: string, sessionKey?: string): void {
+  if (screencastManager.isActive()) {
+    return;
+  }
+  const record = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
+  const action = typeof record.action === "string" ? record.action.trim().toLowerCase() : "";
+  // Don't start screencast for passive actions
+  if (!action || action === "status" || action === "profiles" || action === "stop") {
+    return;
+  }
+  // Resolve cdpUrl from browser config + profile
+  try {
+    const cfg = loadConfig();
+    const browserCfg = resolveBrowserConfig(cfg.browser, cfg);
+    const profileName =
+      typeof record.profile === "string" && record.profile.trim()
+        ? record.profile.trim()
+        : browserCfg.defaultProfile;
+    const profile = resolveProfile(browserCfg, profileName);
+    if (!profile) {
+      return;
+    }
+    const targetId =
+      typeof record.targetId === "string" && record.targetId.trim()
+        ? record.targetId.trim()
+        : undefined;
+    getPageForTargetId({ cdpUrl: profile.cdpUrl, targetId })
+      .then((page) => screencastManager.start(page, runId, sessionKey))
+      .catch(() => {
+        // Best-effort: screencast start failed, silently ignore
+      });
+  } catch {
+    // Config resolution failed — skip screencast
+  }
+}
 
 function isCronAddAction(args: unknown): boolean {
   if (!args || typeof args !== "object") {
@@ -234,6 +274,11 @@ export async function handleToolExecutionStart(
     ctx.emitToolSummary(toolName, meta);
   }
 
+  // Start screencast for browser tool actions (except passive ones)
+  if (toolName === "browser") {
+    tryStartScreencast(args, ctx.params.runId, (ctx.params as Record<string, unknown>).sessionKey as string | undefined);
+  }
+
   // Track messaging tool sends (pending until confirmed in tool_execution_end).
   if (isMessagingTool(toolName)) {
     const argsRecord = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
@@ -380,6 +425,15 @@ export async function handleToolExecutionEnd(
   // Track committed reminders only when cron.add completed successfully.
   if (!isToolError && toolName === "cron" && isCronAddAction(startData?.args)) {
     ctx.state.successfulCronAdds += 1;
+  }
+
+  // Stop screencast when browser tool "stop" action completes
+  if (toolName === "browser" && !isToolError) {
+    const browserAction =
+      typeof startArgs.action === "string" ? startArgs.action.trim().toLowerCase() : "";
+    if (browserAction === "stop") {
+      screencastManager.stop().catch(() => {});
+    }
   }
 
   emitAgentEvent({
