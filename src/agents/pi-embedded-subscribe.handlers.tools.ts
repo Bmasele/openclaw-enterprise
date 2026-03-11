@@ -29,9 +29,6 @@ import { loadConfig } from "../config/config.js";
 const toolStartData = new Map<string, { startTime: number; args: unknown }>();
 
 function tryStartScreencast(args: unknown, runId: string, sessionKey?: string): void {
-  if (screencastManager.isActive()) {
-    return;
-  }
   const record = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
   const action = typeof record.action === "string" ? record.action.trim().toLowerCase() : "";
   // Don't start screencast for passive actions

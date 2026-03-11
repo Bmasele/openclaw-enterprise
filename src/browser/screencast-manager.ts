@@ -14,13 +14,14 @@ class ScreencastManager {
   private starting = false;
   private runId: string | null = null;
   private sessionKey: string | undefined;
+  private frameCount = 0;
 
   async start(page: Page, runId: string, sessionKey?: string): Promise<void> {
-    // If already active, just update the runId so frames route to the current run
+    // If already active, stop the old session and start fresh.
+    // This handles cross-origin navigations which invalidate the CDP target.
     if (this.cdpSession) {
-      this.runId = runId;
-      this.sessionKey = sessionKey;
-      return;
+      console.log(`[screencast] restarting: stopping old session to get fresh CDP target`);
+      await this.stopInternal(false); // stop without emitting phase:stop
     }
     if (this.starting) {
       return;
@@ -28,6 +29,7 @@ class ScreencastManager {
     this.starting = true;
     this.runId = runId;
     this.sessionKey = sessionKey;
+    this.frameCount = 0;
 
     try {
       const session = await page.context().newCDPSession(page);
@@ -35,6 +37,7 @@ class ScreencastManager {
 
       // Handle CDP session disconnect (browser crash/close/tab close)
       session.on("close", () => {
+        console.log(`[screencast] CDP session closed (frames sent: ${this.frameCount})`);
         if (this.cdpSession === session) {
           const prevRunId = this.runId;
           const prevSessionKey = this.sessionKey;
@@ -54,6 +57,7 @@ class ScreencastManager {
       });
 
       session.on("Page.screencastFrame", (params: { data: string; metadata: unknown; sessionId: number }) => {
+        this.frameCount++;
         if (this.runId) {
           emitAgentEvent({
             runId: this.runId,
@@ -63,7 +67,9 @@ class ScreencastManager {
           });
         }
         // Ack the frame so CDP sends the next one (built-in backpressure)
-        session.send("Page.screencastFrameAck", { sessionId: params.sessionId }).catch(() => {});
+        session.send("Page.screencastFrameAck", { sessionId: params.sessionId }).catch((err) => {
+          console.error(`[screencast] frame ack error: ${String(err)}`);
+        });
       });
 
       await session.send("Page.startScreencast", {
@@ -74,7 +80,7 @@ class ScreencastManager {
       });
 
       this.starting = false;
-      console.log(`[screencast] CDP screencast started for runId=${runId}`);
+      console.log(`[screencast] CDP screencast started for runId=${runId} pageUrl=${page.url()}`);
 
       // Emit start control event
       emitAgentEvent({
@@ -93,7 +99,7 @@ class ScreencastManager {
     }
   }
 
-  async stop(): Promise<void> {
+  private async stopInternal(emitStop: boolean): Promise<void> {
     const session = this.cdpSession;
     const runId = this.runId;
     const sessionKey = this.sessionKey;
@@ -118,7 +124,7 @@ class ScreencastManager {
       // Ignore detach errors
     }
 
-    if (runId) {
+    if (emitStop && runId) {
       emitAgentEvent({
         runId,
         sessionKey,
@@ -126,6 +132,11 @@ class ScreencastManager {
         data: { phase: "stop" },
       });
     }
+  }
+
+  async stop(): Promise<void> {
+    console.log(`[screencast] stopping (frames sent: ${this.frameCount})`);
+    await this.stopInternal(true);
   }
 
   isActive(): boolean {
